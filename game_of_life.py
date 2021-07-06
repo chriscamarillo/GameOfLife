@@ -1,132 +1,65 @@
-from tkinter import *
-from random import randint
+from itertools import product
+from random import sample
+import time
 
-# initial cell creation for a given grid
-def create_cells():
-    cell_w, cell_h = CANVAS_W // GRID_R, CANVAS_H // GRID_C
+class Population:
+    def __init__(self, width, height, living=set()):
+        self.width = width
+        self.height = height
+        self.living = living
 
-    global cells
-    cells = [[window.create_rectangle(x, y, x + cell_w, y + cell_w, fill='white')
-             for y in range(0, CANVAS_W, cell_w)]
-             for x in range(0, CANVAS_H, cell_h)]
+    def neighbors(self, cell):
+        x, y = cell
+        not_self = lambda c: c != cell
+        inbounds_width = lambda c: 0 <= c[0] < self.width
+        inbounds_height = lambda c: 0 <= c[1] < self.height
 
-# cell status checks
-def is_alive(cell_pos):
-    x, y = cell_pos
-    return window.itemconfig(cells[x][y])['fill'][4] == 'black'
+        result = product(range(x - 1, x + 2), range(y - 1, y + 2))
+        result = filter(not_self, result)
+        result = filter(inbounds_width, result)
+        result = filter(inbounds_height, result)
+        result = filter(lambda c: c in self.living, result)
+        return list(result)
 
-def inbounds(cell_pos):
-    x, y = cell_pos
-    return 0 <= x < GRID_C and 0 <= y < GRID_R
-
-def neighbors(pos):
-    x, y = pos
-    neighbors = [(x + dx, y + dy) for dx in [0, 1, -1] for dy in [0, 1, -1] if
-                 not (dx == 0 and dy == 0)]
+    def __str__(self):
+        grid_str = ''
+        for y in range(self.height):
+            for x in range(self.width):
+                grid_str += '*' if (x, y) in self.living else ' '
+            grid_str += '\n'
+        return grid_str
     
-    neighbors = filter(inbounds, neighbors)
-    neighbors = filter(is_alive, neighbors)
-    return list(neighbors)
+    @staticmethod
+    def random(width, height, p_alive):
+        all_cells = list(product(range(width), range(height)))
+        num_alive = int(p_alive * width * height)
+        alive = set(sample(all_cells, num_alive))
+        return Population(width, height, alive)
 
-# callbacks
-def playpause_callback():
-    play_pause.config(text='Pause' if play_pause['text'] == 'Play' else 'Play')
-    global running
-    running = not running
-    
-def randomize_callback():
-    for row in range(GRID_R):
-        for col in range(GRID_C):
-            window.itemconfig(cells[row][col], fill='black' if randint(0,5) == 0 else 'white')
+def GameOfLife(population, N=100):
+    while N > 0:
+        all_cells = product(range(population.width), range(population.height))
+        new_living_set = set()
+        for cell in all_cells:
+            alive = cell in population.living
+            num_neighbors = len(population.neighbors(cell))
 
-def cell_callback(event):
-    # find clicked cell
-    cell_x = event.x * GRID_R // CANVAS_W
-    cell_y = event.y * GRID_C // CANVAS_H
-    cell_pos = (cell_x, cell_y)
-
-    # toggle cell status
-    cell = cells[cell_x][cell_y]
-    fill = window.itemconfig(cell)['fill'][4]
-    window.itemconfig(cell, fill='white' if fill == 'black' else 'black')
-
-    # print count of nearby living cells
-    print(len(neighbors(cell_pos)))
-    pass
-
-# game logic
-def setup():
-    global window
-    global play_pause, randomize_button
-    global running
-    global ticks_per_sec
-
-    window = Canvas(root, width=CANVAS_W, height=CANVAS_H)
-    window.grid(row=0, columnspan=3)
-    window.bind('<ButtonPress>', cell_callback)
-    
-    play_pause = Button(root, text='Play', command=playpause_callback)
-    play_pause.grid(row=1, column=0)
-
-    randomize_button = Button(root, text='Random', command=randomize_callback)
-    randomize_button.grid(row=1, column=1)
-    
-    ticks_per_sec = Scale(root, from_=1, to=60, orient=HORIZONTAL)
-    ticks_per_sec.grid(row=1, column=2, columnspan=2)
-
-    reset()
-
-def reset():
-    try:
-        for row in range(GRID_R):
-            for col in range(GRID_C):
-                window.itemconfig(cells[row][col], fill='white')
-    except NameError:
-        window.delete(ALL)
-        create_cells()
-
-    running = False
-
-def tick():
-    if running:
-        # main Game of Life code
-        new_sheet = []
+            if alive and 1 < num_neighbors < 4:
+                new_living_set.add(cell)
+            if not alive and num_neighbors == 3:
+                new_living_set.add(cell)
         
-        for row in range(GRID_R):
-            sheet_row = []
-            for col in range(GRID_C):
-                # population rules
-                cell_pos = (row, col)
-                neighbor_count = len(neighbors(cell_pos))
-                if (is_alive(cell_pos) and neighbor_count == 2) or neighbor_count == 3:
-                    sheet_row.append(1)
-                else:
-                    sheet_row.append(0)
-            new_sheet.append(sheet_row)
-
-        # parse new sheet
-        for row in range(GRID_R):
-            for col in range(GRID_C):
-                cell = cells[row][col]
-                alive = new_sheet[row][col]
-                window.itemconfig(cell, fill='black' if alive else 'white')
-    
-    root.after(int(1000 / ticks_per_sec.get()), tick)
+        print(population.living)
+        yield population
+        N -= 1
+        population.living= new_living_set
 
 if __name__ == '__main__':
-    global GRID_R, GRID_C
-    global CANVAS_W, CANVAS_H
-    global running
-    global root
+    p = Population(50, 20)
+    p.living = set([(2, 1), (3, 2), (1, 3), (2, 3), (3, 3)])
+    game = GameOfLife(p)
 
-    GRID_R, GRID_C = 20, 20
-    CANVAS_W, CANVAS_H = 500, 500
-    running = False
-    
-    root = Tk()
-    root.title('Conway\'s Game of Life')
-    setup()
-    tick()
-
-    
-    
+    for generation, state in enumerate(game):
+        print(state)
+        print('%s%d%s' % ('-'*25, generation, '-'*25))
+        time.sleep(.1)
